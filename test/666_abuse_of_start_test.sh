@@ -28,9 +28,9 @@ proxy docker_on $HOST1 create --name=c3 -v /tmp:/hosttmp $SMALL_IMAGE $CHECK_ETH
 proxy docker_api_on $HOST1 POST /containers/c3/start '{"Binds":[],"Dns":null,"DnsSearch":null,"ExtraHosts":null,"VolumesFrom":null,"Devices":null,"NetworkMode":""}'
 check_hostconfig c3 default
 
-# Start c4 with an 'null' HostConfig
-proxy docker_on $HOST1 create --name=c4 -p 1234:1234 $SMALL_IMAGE echo foo
+# Start c4 with an 'null' HostConfig and check this doesn't remove previous parameters
+proxy docker_on $HOST1 create --name=c4 --memory-swap -1 --memory 8000000 $SMALL_IMAGE echo foo
 assert_raises "proxy docker_api_on $HOST1 POST /containers/c4/start 'null'"
-assert "docker_on $HOST1 inspect -f '{{.HostConfig.PortBindings}}' c4" "map[1234/tcp:[{ 1234}]]"
+assert "docker_on $HOST1 inspect -f '{{.HostConfig.Memory}}' c4" "8000000"
 
 end_suite
