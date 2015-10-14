@@ -12,7 +12,7 @@ proxy_start_container $HOST1 --name=c1
 proxy docker_on $HOST1 create --name=c2 $SMALL_IMAGE $CHECK_ETHWE_UP
 proxy docker_api_on $HOST1 POST /containers/c2/start '{"NetworkMode": "container:c1"}'
 docker_on $HOST1 attach c2 >/dev/null || true # Wait for container to exit
-assert "docker_on $HOST1 inspect -f '{{.State.Running}} {{.State.ExitCode}} {{.HostConfig.Dns}}' c2" "false 0 [$docker_bridge_ip]"
+assert "docker_on $HOST1 inspect -f '{{.HostConfig.NetworkMode}} {{.State.Running}} {{.State.ExitCode}} {{.HostConfig.Dns}}' c2" "container:c1 false 0 [$docker_bridge_ip]"
 
 # Start c3 with HostConfig having empty binds and null dns/networking settings
 proxy docker_on $HOST1 create --name=c3 -v /tmp:/hosttmp $SMALL_IMAGE $CHECK_ETHWE_UP
