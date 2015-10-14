@@ -21,7 +21,8 @@ docker_on $HOST1 attach c3 >/dev/null || true # Wait for container to exit
 assert "docker_on $HOST1 inspect -f '{{.State.Running}} {{.State.ExitCode}} {{.HostConfig.Dns}}' c3" "false 0 [$docker_bridge_ip]"
 
 # Start c4 with an 'null' HostConfig
-proxy docker_on $HOST1 create --name=c4 $SMALL_IMAGE echo foo
+proxy docker_on $HOST1 create --name=c4 -p 1234:1234 $SMALL_IMAGE echo foo
 assert_raises "proxy docker_api_on $HOST1 POST /containers/c4/start 'null'"
+assert "docker_on $HOST1 inspect -f '{{.HostConfig.PortBindings}}' c4" "map[1234/tcp:[{ 1234}]]"
 
 end_suite
