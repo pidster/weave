@@ -4,7 +4,7 @@
 
 start_suite "Abuse of 'start' operation"
 
-weave_on $HOST1 launch
+weave_on $HOST1 launch --log-level=debug
 docker_bridge_ip=$(weave_on $HOST1 docker-bridge-ip)
 proxy_start_container $HOST1 --name=c1
 
@@ -32,5 +32,10 @@ check_hostconfig c3 default
 proxy docker_on $HOST1 create --name=c4 --memory-swap -1 $SMALL_IMAGE echo foo
 assert_raises "proxy docker_api_on $HOST1 POST /containers/c4/start 'null'"
 assert "docker_on $HOST1 inspect -f '{{.HostConfig.MemorySwap}}' c4" "-1"
+
+# Start c6 with both named and unnamed HostConfig
+proxy docker_on $HOST1 create --name=c6 $SMALL_IMAGE $CHECK_ETHWE_UP
+proxy docker_api_on $HOST1 POST /containers/c6/start '{"NetworkMode": "container:c2", "HostConfig": {"NetworkMode": "container:c1"}}'
+check_hostconfig c6 container:c1
 
 end_suite
