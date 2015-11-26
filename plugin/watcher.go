@@ -6,6 +6,7 @@ import (
 
 	. "github.com/weaveworks/weave/common"
 	"github.com/weaveworks/weave/common/docker"
+	"github.com/weaveworks/weave/weaveapi"
 )
 
 const (
@@ -14,6 +15,7 @@ const (
 
 type watcher struct {
 	dockerer
+	weave *weaveapi.Client
 }
 
 type Watcher interface {
@@ -33,6 +35,19 @@ func NewWatcher(client *docker.Client) (Watcher, error) {
 	return w, nil
 }
 
+func (w *watcher) configureWeaveClient() error {
+	if w.weave != nil {
+		return nil
+	}
+	dnsip, err := w.client.GetContainerBridgeIP(WeaveContainer)
+	if err != nil {
+		Log.Warningf("nameserver not available: %s", err)
+		return fmt.Errorf("nameserver not available: %s", err)
+	}
+	w.weave = weaveapi.NewClient(dnsip)
+	return nil
+}
+
 func (w *watcher) ContainerStarted(id string) {
 	Log.Debugf("Container started %s", id)
 	info, err := w.client.InspectContainer(id)
@@ -45,8 +60,10 @@ func (w *watcher) ContainerStarted(id string) {
 		// one of ours
 		ip := info.NetworkSettings.IPAddress
 		fqdn := fmt.Sprintf("%s.%s", info.Config.Hostname, info.Config.Domainname)
-		if err := w.registerWithDNS(id, fqdn, ip); err != nil {
-			Log.Warningf("unable to register with weaveDNS: %s", err)
+		if w.configureWeaveClient() == nil {
+			if err := w.weave.RegisterWithDNS(id, fqdn, ip); err != nil {
+				Log.Warningf("unable to register with weaveDNS: %s", err)
+			}
 		}
 	}
 }
@@ -60,8 +77,10 @@ func (w *watcher) ContainerDied(id string) {
 	}
 	if isSubdomain(info.Config.Domainname, WeaveDomain) {
 		ip := info.NetworkSettings.IPAddress
-		if err := w.deregisterWithDNS(id, ip); err != nil {
-			Log.Warningf("unable to deregister with weaveDNS: %s", err)
+		if w.configureWeaveClient() == nil {
+			if err := w.weave.DeregisterWithDNS(id, ip); err != nil {
+				Log.Warningf("unable to deregister with weaveDNS: %s", err)
+			}
 		}
 	}
 }
