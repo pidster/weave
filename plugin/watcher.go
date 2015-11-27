@@ -35,17 +35,16 @@ func NewWatcher(client *docker.Client) (Watcher, error) {
 	return w, nil
 }
 
-func (w *watcher) configureWeaveClient() error {
-	if w.weave != nil {
-		return nil
+func (w *watcher) haveWeaveClient() bool {
+	if w.weave == nil {
+		dnsip, err := w.client.GetContainerBridgeIP(WeaveContainer)
+		if err != nil {
+			Log.Warningf("nameserver not available: %s", err)
+			return false
+		}
+		w.weave = weaveapi.NewClient(dnsip)
 	}
-	dnsip, err := w.client.GetContainerBridgeIP(WeaveContainer)
-	if err != nil {
-		Log.Warningf("nameserver not available: %s", err)
-		return fmt.Errorf("nameserver not available: %s", err)
-	}
-	w.weave = weaveapi.NewClient(dnsip)
-	return nil
+	return true
 }
 
 func (w *watcher) ContainerStarted(id string) {
@@ -56,14 +55,12 @@ func (w *watcher) ContainerStarted(id string) {
 		return
 	}
 	// FIXME: check that it's on our network; but, the docker client lib doesn't know about .NetworkID
-	if isSubdomain(info.Config.Domainname, WeaveDomain) {
+	if isSubdomain(info.Config.Domainname, WeaveDomain) && w.haveWeaveClient() {
 		// one of ours
 		ip := info.NetworkSettings.IPAddress
 		fqdn := fmt.Sprintf("%s.%s", info.Config.Hostname, info.Config.Domainname)
-		if w.configureWeaveClient() == nil {
-			if err := w.weave.RegisterWithDNS(id, fqdn, ip); err != nil {
-				Log.Warningf("unable to register with weaveDNS: %s", err)
-			}
+		if err := w.weave.RegisterWithDNS(id, fqdn, ip); err != nil {
+			Log.Warningf("unable to register with weaveDNS: %s", err)
 		}
 	}
 }
@@ -75,12 +72,10 @@ func (w *watcher) ContainerDied(id string) {
 		Log.Warningf("error inspecting container: %s", err)
 		return
 	}
-	if isSubdomain(info.Config.Domainname, WeaveDomain) {
+	if isSubdomain(info.Config.Domainname, WeaveDomain) && w.haveWeaveClient() {
 		ip := info.NetworkSettings.IPAddress
-		if w.configureWeaveClient() == nil {
-			if err := w.weave.DeregisterWithDNS(id, ip); err != nil {
-				Log.Warningf("unable to deregister with weaveDNS: %s", err)
-			}
+		if err := w.weave.DeregisterWithDNS(id, ip); err != nil {
+			Log.Warningf("unable to deregister with weaveDNS: %s", err)
 		}
 	}
 }
