@@ -282,10 +282,9 @@ if [ "$1" = "--help" -o "$1" = "help" ] ; then
     # at the client end.
     usage_no_exit
     exit 0
-elif [ "$1" = "version" -a -z "$IS_LOCAL" ] ; then
-    # non-local "version" is special because we want to show the
-    # version of the script executed by the user rather than what is
-    # embedded in weaveexec.
+elif [ "$1" = "version" ] ; then
+    # we want to show the version of the script executed by the user
+    # rather than what is embedded in weaveexec.
     echo "weave script $SCRIPT_VERSION"
 elif [ "$1" = "env" -a "$2" = "--restore" ] ; then
     # "env --restore" is special because we always want to process it
