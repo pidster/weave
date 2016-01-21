@@ -751,12 +751,15 @@ netnsenter() {
 
 # connect_container_to_bridge <container inteface name>
 connect_container_to_bridge() {
+    echo "Creating veth $LOCAL_IFNAME $GUEST_IFNAME $MTU" >&2
     ip link add name $LOCAL_IFNAME mtu $MTU type veth peer name $GUEST_IFNAME mtu $MTU || return 1
 
+    echo "Moving $GUEST_IFNAME into netns $PROCFS/$CONTAINER_PID/ns/net" >&2
     if ! ethtool_tx_off_$BRIDGE_TYPE $GUEST_IFNAME ||
         ! ip link set $GUEST_IFNAME netns $PROCFS/$CONTAINER_PID/ns/net ; then
         # failed before we assigned the veth to the container's
         # namespace
+        echo "Failed to set netns - removing veth" >&2
         ip link del $LOCAL_IFNAME type veth || true
         return 1
     fi
@@ -768,13 +771,16 @@ connect_container_to_bridge() {
     # which leads to errors later on.  So to get a consistent result,
     # we have to be explicit in setting them 'up' or 'down' as
     # necessary.
+    echo "Attaching $LOCAL_IFNAME to bridge" >&2
     if ! netnsenter ip link set $GUEST_IFNAME down ||
        ! netnsenter ip link set $GUEST_IFNAME name $1 up ||
        ! ip link set $LOCAL_IFNAME up ||
        ! add_iface_$BRIDGE_TYPE $LOCAL_IFNAME ||
        ! configure_arp_cache $1 "netnsenter" ; then
+        echo "Failed to attach" >&2
         return 1
     fi
+    echo "Container connected to bridge successfully" >&2
 }
 
 add_iface_fastdp() {
@@ -843,23 +849,28 @@ attach() {
         return 1
     fi
 
-    if ! netnsenter ip link show $CONTAINER_IFNAME >/dev/null 2>&1 ; then
+    echo "Testing for presence of $CONTAINER_IFNAME in $CONTAINER_PID" >&2
+    if ! netnsenter ip link show $CONTAINER_IFNAME 1>&2 ; then
         connect_container_to_bridge $CONTAINER_IFNAME || return 1
     fi
 
     NEW_ADDRS=
     for ADDR in "$@" ; do
-        if netnsenter ip addr show dev $CONTAINER_IFNAME | grep -F $ADDR >/dev/null ; then
+        echo "Testing $CONTAINER_IFNAME for presence of $ADDR" >&2
+        if netnsenter ip addr show dev $CONTAINER_IFNAME | grep -F $ADDR 1>&2 ; then
             # address was there already
             continue
         fi
+        echo "Adding address $ADDR to $CONTAINER_IFNAME" >&2
         netnsenter ip addr add $ADDR dev $CONTAINER_IFNAME || return 1
         NEW_ADDRS="$NEW_ADDRS $ADDR"
     done
 
+    echo "Bringing $CONTAINER_IFNAME up" >&2
     netnsenter ip link set $CONTAINER_IFNAME up || return 1
 
     for ADDR in $NEW_ADDRS ; do
+        echo "ARP update $ADDR" >&2
         arp_update $CONTAINER_IFNAME $ADDR "netnsenter"
     done
 
@@ -872,10 +883,13 @@ attach() {
     # errors for packets with multicast destinations, that causes
     # packets larger than the PMTU to be dropped silently.
     if [ -z "$NO_MULTICAST_ROUTE" ] ; then
-        if ! netnsenter ip route show | grep '^224\.0\.0\.0/4' >/dev/null ; then
+        echo "Testing for presence of multicast route" >&2
+        if ! netnsenter ip route show | grep '^224\.0\.0\.0/4' 1>&2 ; then
+            echo "Adding multicast route" >&2
             netnsenter ip route add 224.0.0.0/4 dev $CONTAINER_IFNAME mtu lock $MTU
         fi
     fi
+    echo "Attach completed successfully" >&2
 }
 
 detach() {
@@ -2001,6 +2015,7 @@ EOF
         echo $RES
         ;;
     attach)
+        echo weave attach "$@" >&2
         DNS_EXTRA_HOSTS=
         REWRITE_HOSTS=
         NO_MULTICAST_ROUTE=
@@ -2035,7 +2050,8 @@ EOF
         create_bridge
         ipam_cidrs$ATTACH_TYPE allocate $CONTAINER $CIDR_ARGS
         [ -n "$REWRITE_HOSTS" ] && rewrite_etc_hosts $DNS_EXTRA_HOSTS
-        with_container_netns$ATTACH_TYPE $CONTAINER attach $ALL_CIDRS >/dev/null
+        echo "Attaching $CONTAINER to $BRIDGE_TYPE" >&2
+        with_container_netns$ATTACH_TYPE $CONTAINER attach $ALL_CIDRS
         when_weave_running with_container_fqdn $CONTAINER put_dns_fqdn $ALL_CIDRS
         show_addrs $ALL_CIDRS
         ;;
