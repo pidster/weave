@@ -1,3 +1,76 @@
+## Release 1.5.0
+
+## Highlights
+
+This release is much more robust against unscheduled restarts, because
+it persists key data to disk.  It also has new configuration options
+that are useful when you create or auto-scale larger networks.
+
+## Changes
+
+**General**
+
+* Start an existing Weave container rather than removing it and creating a fresh one, if its image and arguments match #1967
+* Simplify Weave internals by replacing bind-mount of /procfs with `docker run --pid=host` #578/#1982/#1965/#1966
+* Don't remove container on `weave stop`, so we can read its log or restart it #1937/#1939
+* Periodically check for newer versions of weave. #1954
+* After an upgrade, make `weave version` report the version that will run next, not the version of an older, stopped, Weave #1827/#1938
+
+**Router**
+
+* Return Weave network to same state after a reboot, avoiding potential leaks of addresses or hanging, by persisting IP allocations to peers and containers to disk #678/#894/#901/#1971/#1973/#2012
+* Retain identity of peers across reboots and `weave reset`, by deriving the peer name from Linux `product_uuid` #1866/#1888
+* Containers will now get the same IP address if the container is restarted #1047/#1179/#1191
+* Re-form dynamically expanded mesh on reboot, by persisting list of peers that we connect to #1972
+* Eliminate uncertainty about how network will form when the overall number of nodes is not known, by marking most nodes as non-electing via `--observer` flag #1743/#1990
+* Ability to bypass consensus step for fixed network configurations, by specifying initial IPAM state #1998
+* New command to force IPAM consensus on a node, to ensure network is in a consistent state #1994/#1997
+* Simplify router by always running in host network namespace #1746/#1930
+* Improve peer-to-peer gossip: don't stall other connections when one is blocked #1826/#1855/#1856
+* Make error messages clearer in certain irrecoverable IPAM conditions #1957
+* New undocumented `weave attach-bridge` feature to replace undocumented `create-bridge` #1955/#1964
+* Improve error message when `weave launch` command has malformed peer address #1892/#1924
+
+**Proxy**
+
+* Proxy now retries attaching containers after restarting, in case router was not ready yet #1561/#1556/#1588/#1880
+
+**Plugin**
+
+* Allow specification of a specific IP address when using the plugin #1734/#1916
+* Support specifying the subnet and IP range on `docker network create` #1806/#1915
+* Check if plugin has exited immediately, to improve visibility of startup problems #1873/#1941
+* Move creation and removal of default `weave` network into a separate utility #1897/#1901
+* Removed unused 'nameserver' option from plugin #1777
+
+**Efficiency**
+
+* Do some network configuration by calling the kernel directly rather than via external commands #1944/#1951
+* Removed an unnecessary check in the IPAM start-up code #1948
+* Defer route calculation to when needed, to reduce CPU load #1761/#1773
+
+**Docs**
+
+* Reorganization of docs for WordPress #2015
+* Document vendored dependency management commands #1902
+* Update statement about the size of the Weave container #1114
+
+**Build and test**
+
+* Repeatable builds, via containerized build and vendored dependencies #1656/#1850/#1861
+* Upgrade version of Go to 1.5.2 #1653/#1657/#1861
+* Move smoke-test dependencies from 'all' to 'testrunner' target #1893/#1920
+* Fix smoke-tests for docker 1.10 #1913
+* Fix occasional failure in IPAM unit tests caused by race condition #1651/#1862
+* Improve robustness of CI creating and destroying VMs #864/#1857
+* Reduce footprint by combining several script utilities into a single binary #1613/#1847
+* Improve build times on CircleCI #1896
+* Update Vagrant to use Wily 15.10 #1912
+* Shrink Travis usage #1864
+* Extract `mesh` library out to its own repository #1889/#1890
+* Fix `multiweave` test harness to work with fast datapath #1589
+
+
 ## Release 1.4.5
 
 Higher performance for multicast and broadcast traffic when using
