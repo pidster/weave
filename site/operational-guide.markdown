@@ -1,149 +1,267 @@
 # Concepts
-## Installing Weave
 
-    sudo curl -L git.io/weave -o /usr/local/bin/weave
-    sudo chmod a+x /usr/local/bin/weave
+This section describes some essential concepts with which you will
+need to be familiar before moving on to the example deployment
+scenarios.
 
-## Force Download of Docker Images
+## Peer
 
-    weave setup
+A peer is a host on which you have installed weave.
 
-## Launching Weave
+## Peer Name
 
-    weave launch
+Peers in the weave network are identified by a 48-bit value formatted
+like an ethernet MAC address e.g. `01:23:45:67:89:ab`. This 'peer
+name' is used for various purposes:
 
-## Starting Weave on Boot
+* Routing of packets between containers on the overlay network
+* Recording the origin peer of DNS entries
+* Recording ownership of IP address ranges
 
-    sudo weave install-unit
+Whilst the first two uses tolerate the peer name changing on router
+restarts, the third use means that address space can be 'lost' (e.g.
+recorded as being owned by a now non-existent peer name) and so it is
+desirable for the peer name to be as stable as possible across
+restarts. Consequently when the router is launched on a host it
+derives its peer name in order of preference:
 
-## Peer Identity
+* From the command line; specifier is responsible for uniqueness and
+  stability
+* From the BIOS product UUID, which is generally stable across restarts
+  and unique across different physical hardware and cloned VMs
+* From a random value, unique across different physical hardware and
+  cloned VMs but not stable across restarts
 
-    weave launch --name
+More important still than the stability constraint is uniqueness;
+address space lost due to a peer name change can be recovered with an
+administrative action, but if two or more peers share the same name
+chaos will ensue, including but not limited to double allocation of
+addresses and inability to route packets on the overlay network.
 
-## Bootstrap Consensus
+The best strategy for assigning peer names depends on the type and
+method of your particular deployment and is discussed in more detail
+below.
 
-    weave consense
+## Peer Discovery
 
-## Electorate
+Peer discovery is a mechanism which allows peers to learn about new
+weave hosts from existing peers without being explicitly told. Peer
+discovery is enabled by default.
 
-    weave launch --not-electorate
+## Network Partition
 
-## Discovery & Connecting Peers
+A network partition is a transient condition whereby some arbitrary
+subsets of peers are unable to communicate with each other. Weave is
+designed to allow peers and their containers to make maximum safe
+progress under conditions of partition, healing automatically once the
+partition is over.
 
-    weave launch [--no-discovery] [<peer> ...]
-    weave connect [<peer> ...]
-    weave forget [<peer> ...]
+## IP Address Manager (IPAM)
+
+IPAM is the subsystem responsible for dividing up a large contiguous
+block of IP addresses (known as the IP allocation range) amongst peers
+so that individual addresses may be uniquely assigned to containers
+anywhere on the overlay network.
+
+When a new network is formed an initial division of the IP allocation
+range must be made. Two (mutually exclusive) mechanisms with different
+tradeoffs are provided to perform this task: seeding and consensus.
+
+## Seeding
+
+Seeding requires each peer to be told the list of peer names amongst
+which the address space is to be divided initially. There are some
+constraints and consequences:
+
+* Every peer added to the network _must_ receive the same seed list,
+  for all time, or they will not be able to join together to form a
+  single cohesive whole
+* Because the 'product UUID' and 'random value' methods of peer name
+  assignment are unpredictable, the end user must by necessity also
+  specify peer names
+* Even though every peer _must_ receive the same seed, that seed does
+  _not_ have to include every peer in the network, nor does it have to
+  be updated when new peers are added (in fact due to the first
+  constraint above it may not be)
+
+Example configurations are given in the section on deployment
+scenarios.
+
+## Consensus
+
+Alternatively, when a new network is formed for the first time peers
+can be configured to co-ordinate amongst themselves to automatically
+divide up the IP allocation range - this process is known as
+consensus, and is implemented via a leader election algorithm.
+Consensus based bootstrapping requires each peer to be told the total
+number of expected peers (the 'initial peer count') in order to avoid
+small independent groups of peers from electing different leaders
+under conditions of partition.
+
+Example configurations are given in the section on deployment
+scenarios.
+
+## Electors and Observers
+
+When using consensus-based configuration then by default every peer
+included in the network is a candidate for leadership. This does not
+always make sense (for example when adding relatively short lived
+peers to an existing cluster in response to a scale-out event) and so
+an option is provided to start a peer as an _observer_. Such peers
+will not put themselves forward as leaders, but will abide by the
+results of an election amongst elector-peers.
+
+Example configurations are given in the section on deployment
+scenarios.
 
 ## Persistence
-* `weave launch` command line peers
-* IPAM ring (e.g. which peername owns which ranges of address space)
-* IPAM allocations (e.g. which container on a host has which specific
-  address)
-* Additional DNS records for containers and weave:external
-* Non-IPAM `weave attach` and `weave expose` addresses (implies
-  persistence of `weave attach` and `weave expose`)
 
-# Deployment Types
+If you relaunch weave with _exactly_ the same parameters as the
+previous invocation (as will happen if it is restarted automatically
+by Docker), certain information is remembered:
+
+* Runtime modifications to the target peer list enacted via the
+  command line
+* The division of the IP allocation range amongst peers
+* Allocation of addresses to containers
+
+The persistence of this information is managed transparently inside
+the router container but can be destroyed explicitly if necessary.
+
+# Deployment Scenarios
+
+This section discusses various deployment scenarios, documenting the
+best-practice operational guidance for each use case.
+
 ## Manual/Incremental
-* Recommended for evaluation only
-* Configuration built up incrementally via `weave` CLI
-* Results of all CLI interactions are persisted
-* Survives reboots if systemd unit file installed
-* Unsophisticated users will probably try to use this for production,
-  so should probably recommend that they start all nodes except the
-  first with --not-elector (this is conceptually much easier than
-  --init-peer-count IMO). It means that the first node is a SPOF
-  initially, if that matters then choose a different use case
 
-## Uniform cluster
-* Uniform node configuration via systemd unit and environment file
-* Minimum one initial node. Wait for consensus (ideally before initial
-  commissioning is considered successful) before further changes occur
-* All nodes are electors
-* Supports grow via controlled process:
-    * Update startup target list of existing peers (in case they
-      reboot)
-    * Launch new node listing all existing peers as targets
-    * Wait for consensus on new peer
-* Support shrink via controlled process:
-    * `weave reset` on peer to be removed
-    * Update startup target list of remaining peers (in case they
-      reboot)
-    * `weave forget` on remaining peers
-* Grow/shrink operations must be serialised by some external
-  management agent (e.g. a human operator or some automated
-  infrastructure) to prevent cliques forming under partition
+This scenario is intended for evaluation, not production use. The
+resulting weave network should survive host reboots.
 
-## Non-uniform cluster (fixed base + dynamic contingent)
-* Builds on uniformly configured fixed cluster core (minimum one node,
-  recommend two for resilience) of protected instances
-* Supports automated add and remove of nodes by external management
-  infrastructure in response to scale in/out events after consensus is
-  reached in core
-* Dynamic nodes are not electors, and are only configured to connect
-  to fixed cluster. Sideways peering between dynamic nodes is obtained
-  via gossip discovery
-* Can launch or remove as many dynamic nodes as desired concurrently
-* Dynamic removal must `weave reset` prior to instance termination
-* Requires periodic checking for lost address space in case instances
-  have been removed under partition
+### Adding a Peer
 
-## Autoscaling From Zero Nodes And Back
+On initial peer:
 
-(Editor's note: this is an attempt to get the 'can be automated to
-scale up from zero nodes' feature of a uniform cluster but without the
-serialisation requirement on further changes. I don't think it's
-really viable)
+    weave launch
+    weave consense
 
-* Requires management infrastructure to start initial node with
-  different config (e.g. as an elector) and subsequent nodes as
-  non-electors
-* Will fail in a way which is awkward to recover automatically if the
-  initial node dies as a second node is being launched
-* Target peer specification is hard, generally involving touching the
-  config of all existing nodes every time a node is added or removed
-    * At a minimum each additional peer should list all existing peers
-      as targets. Should update existing peers too for maximum
-      resilience in the face of random node removal
-    * Removing nodes is harder; need to adjust target lists of all
-      remaining peers to avoid connection attempts to decommissioned
-      nodes
+Or on each subsequent peer:
 
-# Maintenance Tasks
-## Rolling Upgrades
-## Forcing Consensus during Cluster Commissioning/Change
+    weave launch
+    weave connect <existing peers> ...
+    weave consense
+
+The consense step is required to ensure that the new peer has joined
+to the existing network; you must wait for this to complete before
+moving on to further new peers.
+
+Then, optionally on each existing peer:
+
+    weave connect <new peer>
+
+This step is not mandatory, but improves the robustness of network
+reformation in the face of node failure as _nodes do not remember to
+connect to discovered peers on restart_. (For example, if you did the
+following:
+
+    host-A$ weave launch; weave consense
+    host-B$ weave launch; weave connect host-A; weave consense
+    host-C$ weave launch; weave connect host-B; weave consense
+
+host-C's ability to connect to host-A would be entirely dependent on
+gossip discovery via host-B; if the whole network rebooted and host-B
+did not come back up then host-A and host-C would not connect to each
+other.)
+
+### Removing a Peer
+
+On peer to be removed:
+
+    weave reset
+
+On each remaining peer:
+
+    weave forget <removed peer>
+
+## Uniform Fixed Cluster
+
+A uniform fixed cluster has the following characteristics:
+
+* Each node has identical configuration
+* There is a controlled process for adding or removing nodes. The end
+  user is responsible for ensuring that only one instance of the
+  process is in-flight at a time
+
+### Bootstrapping
+
+This scenario describes a production deployment of a fixed number of
+N nodes (N=1 in the degenerate case).
+
+On each peer:
+
+    weave launch --initial-peer-count=N
+    weave connect <inital peer list>
+
+The initial peer list may contain the address of the peer to which it
+is being supplied, so the configuration may be identical for each
+peer.
+
+Then on _any_ peer:
+
+    weave status
+
+To check that all connections have established successfully followed
+by:
 
     weave consense
 
-## Checking for and Recovering Lost Space
+To force consensus - future IP address allocations can now continue
+under partition and it is safe to add new peers.
 
-Need a way of determining deceased peers, e.g. in the case where a
-scale-in event has happened under partition. As an operator I would
-want to be able to generate a report on absent peers so that I can
-configure a threshold alert to trigger manual intervention:
+### Adding a Peer
 
-    weave rmpeer
+On new peer:
 
-# Additional features
-* `weave consense`
-* `sudo weave install-unit`
-* /etc/weave.conf
-* Derive peer name from hostname
-* A way of finding dead address space (does `weave status ipam` do
-  this?)
+    weave launch
+    weave connect <existing peers>
+    weave consense
 
-# Questions/Discussion points
-* How does `weave rmpeer` behave during a partition? Does it complete
-  immediately, and do the Right Thing once the partition heals?
-* How long does `weave reset` wait during partition?
-* --not-elector preferable to --electorate, given the above set of use
-  cases
-* I would prefer a weave.conf over having weave persist the results of
-  certain weave CLI interactions in automated deployment scenarios:
-    * weave attach
-    * weave expose
-    * weave dns-add
+On each existing peer:
 
-# Persistence Behaviour
+    weave connect <new peer>
 
+### Removing a Node
 
+On peer to be removed:
+
+    weave reset
+
+On each remaining peer:
+
+    weave forget <removed peer>
+
+## Autoscaling
+
+This configuration builds on an existing fixed cluster (for example of
+reserved or protected instances) to add/remove peers based on scaling
+events. 
+
+On scale-out (per peer):
+
+    weave launch --observer
+    weave connect <fixed cluster peers>
+
+On scale-in (per peer):
+
+    weave reset
+
+* Arbitrary numbers of dynamic peers can be added or removed
+  concurrently as desired
+* No configuration changes are required to the fixed cluster on
+  scaling events
+* 
+
+# Administrative Tasks
+## Configuring Weave to Start Automatically on Boot
+## Recovering Lost Space
+## Rolling Upgrades
