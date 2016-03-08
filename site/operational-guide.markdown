@@ -263,5 +263,39 @@ On scale-in (per peer):
 
 # Administrative Tasks
 ## Configuring Weave to Start Automatically on Boot
-## Recovering Lost Space
+
+`weave launch` runs all weave's containers with a Docker restart
+policy of `always`, so as long as you have launched weave manually
+once and your system is configured to start Docker on boot then weave
+will be started automatically on system restarts.
+
+If you're aiming for a non-interactive installation, you can use
+systemd to launch weave after Docker - see [systemd docs](TODO) for
+details.
+
+## Recovering Lost IPAM Space
+
+The recommended way of removing a peer is to run `weave reset` on that
+peer before the underlying host is decommissioned or repurposed - this
+ensures that the portion of the IPAM allocation range assigned to the
+peer is released for reuse. Under certain circumstances this operation
+may not be successful, or indeed possible:
+
+* If the peer in question is partitioned from the rest of the network
+  when `weave reset` is executed on it
+* If the underlying host is no longer available to execute `weave
+  reset` - for example due to a hardware failure or other unplanned
+  termination
+
+In either case the remaining peers will all consider the dead peer's
+address space to be unavailable even after it has remained unreachable
+for prolonged periods; there is no universally applicable time limit
+after which a peer could decide unilaterally that it is safe to
+appropriate the space for itself, and so an adminstrative action is
+required to reclaim it.
+
+The `weave rmpeer` command is provided to perform this task, and must
+be executed on one of the remaining peers. That peer will take
+ownership of the freed adress space.
+
 ## Rolling Upgrades
