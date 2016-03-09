@@ -171,7 +171,7 @@ successfully before moving on to add further new peers.
 >     host2$ weave launch host1       # quorum = 2
 >     host3$ weave launch host1 host2 # quorum = 2
 >
-> host1 and host2/host3 can perfrom independent cliques if host1 is
+> host1 and host2/host3 can form independent cliques if host1 is
 > partitioned from host2 and host3. An alternative (assuming #1721 is
 > fixed) would be to mandate `weave connect` on existing peers as each
 > new peer is added.
@@ -340,3 +340,27 @@ be executed on one of the remaining peers. That peer will take
 ownership of the freed adress space.
 
 ## Rolling Upgrades
+
+Protocol versioning and feature negotation are employed in Weave Net
+to enable incremental rolling upgrades - each release maintains the
+ability to speak to the previous version (at a minimum), and connected
+peers only utilise features which both support. The general upgrade
+procedure is as follows:
+
+On each peer in turn:
+
+* Download the new weave script to a temporary location e.g.
+  `/path/to/new/weave`
+* Pull the new images with `/path/to/new/weave setup`
+* Stop the old weave with `weave stop` (or `systemctl weave stop` if
+  you're using a systemd unit file)
+* Replace the existing script with the new one
+* Start the new weave with `weave launch <existing peer list>` (or
+  `systemctl weave start` if you're using a systemd unit file)
+
+Always check the release notes for specific versions in case there are
+any special caveats or deviations from the standard procedure.
+
+> Author's Note:
+> * `weave setup` with the new script before we stop the old router
+>   minimises downtime
