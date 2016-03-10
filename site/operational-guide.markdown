@@ -4,6 +4,9 @@ This section describes some essential concepts with which you will
 need to be familiar before moving on to the example deployment
 scenarios.
 
+> Author's Note: I have deliberately excluded any mention of
+> weave command syntax in this section
+
 ## Peer
 
 A peer is a host on which you have installed weave.
@@ -212,6 +215,11 @@ On each remaining peer:
 
 ## Uniform Fixed Cluster
 
+> Author's Note: I'm going to change this section to recommend systemd
+> at which point the mentions of `weave launch` and `weave connect`
+> will be replaced and I will talk about amending the PEER list in
+> /etc/sysconfig/weave instead
+
 A uniform fixed cluster has the following characteristics:
 
 * Each node has identical configuration
@@ -276,9 +284,14 @@ On each remaining peer:
 
 This configuration builds on an existing fixed cluster (for example of
 reserved or protected instances) to add/remove peers based on scaling
-events. 
+events:
 
-# Scale-out
+* Arbitrary numbers of dynamic peers can be added or removed
+  concurrently as desired
+* No configuration changes are required to the fixed cluster on
+  scaling events
+
+### Scale-out
 
 On additional peer:
 
@@ -291,16 +304,18 @@ On additional peer:
 > responding to the scale-out event from having to keep track of
 > dynamic peers
 
-# Scale-in
+### Scale-in
 
 On peer to be removed:
 
     weave reset
 
-* Arbitrary numbers of dynamic peers can be added or removed
-  concurrently as desired
-* No configuration changes are required to the fixed cluster on
-  scaling events
+## Uniform Dynamic Cluster
+
+> Author's Note: TBD - this will talk about `--ipam-seed` and how it
+> can be used with e.g. puppet to a) stand up an initial cluster and
+> b) add arbitrary new nodes without requiring external
+> synchronisation
 
 # Administrative Tasks
 ## Configuring Weave to Start Automatically on Boot
@@ -313,6 +328,9 @@ will be started automatically on system restarts.
 If you're aiming for a non-interactive installation, you can use
 systemd to launch weave after Docker - see [systemd docs](TODO) for
 details.
+
+> Author's Note: I'm going to pull the complete systemd doc into this
+> section
 
 ## Recovering Lost IPAM Space
 
