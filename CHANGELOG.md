@@ -2,14 +2,17 @@
 
 ## Highlights
 
-This release is much more robust against unscheduled restarts, because
-it persists key data to disk.  It also has new configuration options
-that are useful when you create or auto-scale larger networks.
+- A new [Container Network Interface](https://github.com/appc/cni#cni---the-container-network-interface) plugin.
+- This release is much more robust against unscheduled restarts,
+  because it persists key data to disk.
+- New configuration options that are useful when you create or
+  auto-scale larger networks.
 
 ## Changes
 
 **General**
 
+* All components now restart automatically if there is a problem or the host reboots, via `--restart=always` #2029
 * Start an existing Weave container rather than removing it and creating a fresh one, if its image and arguments match #1967
 * Simplify Weave internals by replacing bind-mount of /procfs with `docker run --pid=host` #578/#1982/#1965/#1966
 * Don't remove container on `weave stop`, so we can read its log or restart it #1937/#1939
@@ -19,7 +22,7 @@ that are useful when you create or auto-scale larger networks.
 **Router**
 
 * Return Weave network to same state after a reboot, avoiding potential leaks of addresses or hanging, by persisting IP allocations to peers and containers to disk #678/#894/#901/#1971/#1973/#2012
-* Retain identity of peers across reboots and `weave reset`, by deriving the peer name from Linux `product_uuid` #1866/#1888
+* Retain identity of peers across reboots and `weave reset`, by deriving the peer name from Linux `product_uuid` or hypervisor uuid #1866/#1888/#2021/#2037
 * Containers will now get the same IP address if the container is restarted #1047/#1179/#1191
 * Re-form dynamically expanded mesh on reboot, by persisting list of peers that we connect to #1972
 * Eliminate uncertainty about how network will form when the overall number of nodes is not known, by marking most nodes as non-electing via `--observer` flag #1743/#1990
@@ -37,6 +40,7 @@ that are useful when you create or auto-scale larger networks.
 
 **Plugin**
 
+* New CNI plugin 
 * Allow specification of a specific IP address when using the plugin #1734/#1916
 * Support specifying the subnet and IP range on `docker network create` #1806/#1915
 * Check if plugin has exited immediately, to improve visibility of startup problems #1873/#1941
@@ -69,7 +73,7 @@ that are useful when you create or auto-scale larger networks.
 * Shrink Travis usage #1864
 * Extract `mesh` library out to its own repository #1889/#1890
 * Fix `multiweave` test harness to work with fast datapath #1589
-
+* Bump CI Docker version to 1.10.3 #2050
 
 ## Release 1.4.5
 
