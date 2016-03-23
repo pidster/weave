@@ -988,7 +988,17 @@ http_call() {
     http_verb="$2"
     url="$3"
     shift 3
-    curl --connect-timeout 3 -s -S -X $http_verb "$@" http://$addr$url
+    CURL_TMPOUT=/tmp/weave_curl_out_$$
+    output=$(curl -o $CURL_TMPOUT -w '%{http_code}' --connect-timeout 3 -s -S -X $http_verb "$@" http://$addr$url) || return $?
+    # anything not beginning with a 2 is a failure
+    if [ "$output" = "${output#2}" ] ; then
+        [ -f $CURL_TMPOUT ] && cat $CURL_TMPOUT >&2
+    else
+        [ -f $CURL_TMPOUT ] && cat $CURL_TMPOUT
+        output=0
+    fi
+    rm -f $CURL_TMPOUT
+    return $output
 }
 
 http_call_unix() {
@@ -1009,10 +1019,7 @@ call_weave() {
         "$CONTAINER_NAME container is not present. Have you launched it?" \
         "$CONTAINER_NAME container is not running." \
         || return 1
-    if ! http_call $CONTAINER_IP:$HTTP_PORT "$@" ; then
-        echo "Call to $CONTAINER_NAME failed." >&2
-        return 1
-    fi
+    http_call $CONTAINER_IP:$HTTP_PORT "$@"
 }
 
 death_msg() {
@@ -1338,25 +1345,22 @@ ipam_cidrs() {
             else
                 IPAM_URL=/ip/$CONTAINER_ID/"${arg#net:}"
             fi
-            CIDR=$(call_weave $METHOD $IPAM_URL$CHECK_ALIVE) || return 1
-            if [ "$CIDR" = "404 page not found" ] ; then
-                if [ "$METHOD" = "POST" ] ; then
-                    echo "IP address allocation must be enabled to use 'net:'" >&2
-                    return 1
-                fi
-            elif ! is_cidr "$CIDR" ; then
-                echo "$CIDR" >&2
+            retval=0
+            CIDR=$(call_weave $METHOD $IPAM_URL$CHECK_ALIVE) || retval=$?
+            # 404 return code is reduced to 148 because $() does modulo 256
+            if [ $retval = 148 -a "$METHOD" = "POST" ] ; then
+                echo "IP address allocation must be enabled to use 'net:'" >&2
                 return 1
-            else
-                IPAM_CIDRS="$IPAM_CIDRS $CIDR"
-                ALL_CIDRS="$ALL_CIDRS $CIDR"
             fi
+            [ $retval -gt 0 ] && return $retval
+            IPAM_CIDRS="$IPAM_CIDRS $CIDR"
+            ALL_CIDRS="$ALL_CIDRS $CIDR"
         else
             if [ "$METHOD" = "POST" ] ; then
                 # Assignment of a plain IP address; warn if it clashes but carry on
                 command_exists netcheck && netcheck --ignore-iface=$BRIDGE $arg || true
                 if container_ip $CONTAINER_NAME 2>/dev/null ; then
-                    http_call $CONTAINER_IP:$HTTP_PORT PUT /ip/$CONTAINER_ID/${arg%/*} >&2
+                    http_call $CONTAINER_IP:$HTTP_PORT PUT /ip/$CONTAINER_ID/${arg%/*} || return 1
                 fi
             fi
             ALL_CIDRS="$ALL_CIDRS $arg"
@@ -1949,20 +1953,10 @@ EOF
             shift
         done
         [ -n "$SUB_STATUS" ] || echo
-        if status=$(call_weave GET $STATUS_URL) ; then
-            case "$status" in
-                "")
-                    ;;
-                "404 page not found")
-                    echo "Invalid 'weave status' sub-command: $SUB_COMMAND" >&2
-                    usage
-                    ;;
-                *)
-                    echo "$status"
-                    ;;
-            esac
-        else
-            res=1
+        call_weave GET $STATUS_URL || res=$?
+        if [ $res = 404 ] ; then
+            echo "Invalid 'weave status' sub-command: $SUB_COMMAND" >&2
+            usage
         fi
         if [ -z "$SUB_STATUS" ] && check_running $PROXY_CONTAINER_NAME 2>/dev/null && PROXY_ADDRS=$(proxy_addrs) ; then
             echo
