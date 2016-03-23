@@ -1339,13 +1339,13 @@ ipam_cidrs() {
     # If no addresses passed in, select the default subnet
     [ $# -gt 0 ] || set -- net:default
     for arg in "$@" ; do
+        retval=0
         if [ "${arg%:*}" = "net" ] ; then
             if [ "$arg" = "net:default" ] ; then
                 IPAM_URL=/ip/$CONTAINER_ID
             else
                 IPAM_URL=/ip/$CONTAINER_ID/"${arg#net:}"
             fi
-            retval=0
             CIDR=$(call_weave $METHOD $IPAM_URL$CHECK_ALIVE) || retval=$?
             # 404 return code is reduced to 148 because $() does modulo 256
             if [ $retval = 148 -a "$METHOD" = "POST" ] ; then
@@ -1360,7 +1360,12 @@ ipam_cidrs() {
                 # Assignment of a plain IP address; warn if it clashes but carry on
                 command_exists netcheck && netcheck --ignore-iface=$BRIDGE $arg || true
                 if container_ip $CONTAINER_NAME 2>/dev/null ; then
-                    http_call $CONTAINER_IP:$HTTP_PORT PUT /ip/$CONTAINER_ID/${arg%/*} || return 1
+                    output=$(http_call $CONTAINER_IP:$HTTP_PORT PUT /ip/$CONTAINER_ID/${arg%/*} 2>&1) || retval=$?
+                    # 148 (=404 mod 256) means IPAM is disabled
+                    if [ $retval != 0 -a $retval != 148 ] ; then
+                        echo $output >&2
+                        return 1
+                    fi
                 fi
             fi
             ALL_CIDRS="$ALL_CIDRS $arg"
